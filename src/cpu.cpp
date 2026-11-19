@@ -1,5 +1,6 @@
 // cpu.cpp — ДАНО форму. Ваші — case для групи 0x1_ і dump_regs() (Lab 2),
-//           група 0x2_, OUT/OUTN, перевірка меж і run() (Lab 3).
+//           група 0x2_, OUT/OUTN, перевірка меж і run() (Lab 3),
+//           повний декодер, CMP, група 0x3_ і ліміт кроків (Lab 4).
 #include "cpu.hpp"
 
 #include <iomanip>
@@ -18,6 +19,25 @@ static Decoded decode(Byte op) {
     d.group = (op >> 4) & 0x0F;  // зсунути поле до нульового біта, потім маска
     d.index = op & 0x0F;
     return d;
+}
+
+// Зупинити машину з помилкою. Далі step відмовляє, як після HALT.
+static void fail(CPU& cpu, const char* what, std::size_t addr) {
+    std::cout << "error: " << what << " 0x" << std::hex << addr << std::dec
+              << " (memory is 0x000..0x" << std::hex << MEM_SIZE - 1 << std::dec << ")\n";
+    cpu.error = true;
+    cpu.halted = true;
+}
+
+// Невідомий опкод — це помилка, а не тихий NOP (Lab 4, M1).
+// Байт-сміття в пам'яті має зупинити машину, а не «якось виконатись».
+// PC не рухаємо: у regs видно, де саме лежить цей байт.
+static void unknown(CPU& cpu, Byte op) {
+    std::cout << "error: unknown opcode 0x" << std::hex << std::setw(2) << std::setfill('0')
+              << (int)op << " at 0x" << std::setw(3) << cpu.pc << std::dec << std::setfill(' ')
+              << '\n';
+    cpu.error = true;
+    cpu.halted = true;
 }
 
 // Група 0x0_: керування.
@@ -41,7 +61,7 @@ static void exec_control(CPU& cpu, Byte op) {
         cpu.pc += 1;
         break;
     default:
-        cpu.pc += 1;  // поки що як NOP; у Lab 4 це стане помилкою
+        unknown(cpu, op);  // 0x04 OUTS — Lab 5
         break;
     }
 }
@@ -59,17 +79,16 @@ static void exec_alu(CPU& cpu, Byte op) {
     case OP_SHR: cpu.a = alu_shr(cpu.a, cpu.f);        break;
     case OP_INC: cpu.a = alu_inc(cpu.a, cpu.f);        break;
     case OP_DEC: cpu.a = alu_dec(cpu.a, cpu.f);        break;
-    default:     break;  // 0x1A CMP, 0x1B MUL — наступні лаби; поки як NOP
+    case OP_CMP:
+        // Те саме віднімання, що й SUB, і ті самі прапорці (C = позика),
+        // але результат нікуди не пишемо: A лишається, яким був.
+        alu_sub(cpu.a, cpu.b, cpu.f);
+        break;
+    default:
+        unknown(cpu, op);  // 0x1B MUL — Lab 7
+        return;            // PC не рухаємо
     }
     cpu.pc += 1;
-}
-
-// Зупинити машину з помилкою. Далі step відмовляє, як після HALT.
-static void fail(CPU& cpu, const char* what, std::size_t addr) {
-    std::cout << "error: " << what << " 0x" << std::hex << addr << std::dec
-              << " (memory is 0x000..0x" << std::hex << MEM_SIZE - 1 << std::dec << ")\n";
-    cpu.error = true;
-    cpu.halted = true;
 }
 
 // Розмір інструкції в байтах — рівно з таблиці ISA.uk.md, а не на око.
@@ -83,6 +102,9 @@ static std::size_t instr_size(Byte op) {
     case OP_LOAD_B:
     case OP_STORE_A:
     case OP_STORE_B:
+    case OP_JMP:
+    case OP_JZ:
+    case OP_JNZ:
         return 3;  // опкод + addr16 (молодший байт, старший байт)
     default:
         return 1;
@@ -125,10 +147,36 @@ static void exec_data(CPU& cpu, Byte op) {
         break;
     }
     default:
-        break;  // MOV, LOADH, [H], INCH, DECH — рівень Standard; поки як NOP
+        unknown(cpu, op);  // MOV, LOADH, [H], INCH, DECH — у мене рівень Basic, їх немає
+        return;
     }
     // LOAD і STORE прапорці НЕ чіпають (ISA.uk.md §3).
     cpu.pc += instr_size(op);
+}
+
+// Група 0x3_: стрибки. Стрибок — це просто запис нової адреси в PC.
+static void exec_jump(CPU& cpu, Byte op) {
+    std::uint16_t target = get16(*cpu.mem, cpu.pc + 1);
+
+    bool take = false;  // чи спрацьовує стрибок
+    switch (op) {
+    case OP_JMP: take = true;        break;
+    case OP_JZ:  take = cpu.f.z;     break;
+    case OP_JNZ: take = !cpu.f.z;    break;
+    default:
+        unknown(cpu, op);  // 0x33 JC, 0x34 JNC — opt
+        return;
+    }
+
+    if (take) {
+        if (target >= MEM_SIZE) {
+            fail(cpu, "jump target out of memory:", target);
+            return;
+        }
+        cpu.pc = target;  // і НЕ додаємо 3: PC уже там, куди треба
+    } else {
+        cpu.pc += 3;      // не спрацював — іти до наступної інструкції
+    }
 }
 
 void step(CPU& cpu) {
@@ -162,8 +210,11 @@ void step(CPU& cpu) {
     case 0x2:
         exec_data(cpu, op);
         break;
+    case 0x3:
+        exec_jump(cpu, op);
+        break;
     default:
-        cpu.pc += 1;  // поки що як NOP; у Lab 4 це стане помилкою
+        unknown(cpu, op);  // групи 0x4_ і далі — наступні лаби
         break;
     }
 }
@@ -178,16 +229,16 @@ void dump_regs(const CPU& cpu) {
 }
 
 long run(CPU& cpu) {
-    // Стрибків ще немає (Lab 4), тож PC тільки росте і рано чи пізно
-    // дійде або до HALT, або до кінця пам'яті. Ліміт — про всяк випадок.
-    const long MAX_STEPS = 100000;
+    // Зі стрибками програма може крутитись вічно (JMP сам на себе).
+    // Тому не більше MAX_STEPS кроків; потім зупиняємось і кажемо про це.
+    // Машина при цьому НЕ halted: можна подивитись regs і зробити run ще раз.
     long steps = 0;
     while (!cpu.halted && steps < MAX_STEPS) {
         step(cpu);
         ++steps;
     }
     if (!cpu.halted) {
-        std::cout << "stopped after " << MAX_STEPS << " steps without HALT\n";
+        std::cout << "\nstep limit: stopped after " << MAX_STEPS << " steps without HALT\n";
     }
     return steps;
 }

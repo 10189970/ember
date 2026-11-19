@@ -19,6 +19,7 @@ const Byte OP_SHL  = 0x16;
 const Byte OP_SHR  = 0x17;
 const Byte OP_INC  = 0x18;
 const Byte OP_DEC  = 0x19;
+const Byte OP_CMP  = 0x1A;   // Lab 4: A - B лише заради прапорців, результат викидається
 
 // Група 0x2_ — пересилання даних (Lab 3, рівень Basic).
 const Byte OP_LOADI_A  = 0x20;  // LOADI A, imm8       розмір 2
@@ -27,6 +28,15 @@ const Byte OP_LOAD_A   = 0x22;  // LOAD A, [addr16]    розмір 3
 const Byte OP_LOAD_B   = 0x23;  // LOAD B, [addr16]    розмір 3
 const Byte OP_STORE_A  = 0x24;  // STORE [addr16], A   розмір 3
 const Byte OP_STORE_B  = 0x25;  // STORE [addr16], B   розмір 3
+
+// Група 0x3_ — стрибки (Lab 4, рівень Basic). Усі по 3 байти: опкод + addr16.
+const Byte OP_JMP = 0x30;  // завжди
+const Byte OP_JZ  = 0x31;  // якщо Z
+const Byte OP_JNZ = 0x32;  // якщо не Z
+
+// Ліміт кроків для `run`: зламаний JMP (наприклад, сам на себе) не має
+// повісити процес. 100000 — з запасом для будь-якої програми цього семестру.
+const long MAX_STEPS = 100000;
 
 struct Flags {
     bool z = false;   // результат нульовий
@@ -49,6 +59,6 @@ struct CPU {
 void step(CPU& cpu);
 void dump_regs(const CPU& cpu);
 
-// Lab 3: крокувати, поки машина не зупиниться (HALT або помилка).
-// Повертає кількість виконаних кроків.
+// Крокувати, поки машина не зупиниться (HALT або помилка), але не більше
+// MAX_STEPS кроків (Lab 4). Повертає кількість виконаних кроків.
 long run(CPU& cpu);

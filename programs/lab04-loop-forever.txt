@@ -1,0 +1,6 @@
+set 0 0x30
+set 1 0x00
+set 2 0x00
+run
+regs
+quit
