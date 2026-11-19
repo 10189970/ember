@@ -12,6 +12,8 @@ add_executable(ember
     src/cpu.cpp
     src/alu.cpp
     src/display.cpp
+    src/asm/lexer.cpp
+    src/asm/assembler.cpp
 )
 
 target_compile_options(ember PRIVATE -Wall -Wextra -Werror)

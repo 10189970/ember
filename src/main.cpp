@@ -6,12 +6,15 @@
 // in Lab 1 you read this file, you do not write it.
 //
 // What you add in later labs is one more `else if` branch per command.
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <iomanip>
 
 #include "alu.hpp"
+#include "asm/assembler.hpp"
+#include "asm/lexer.hpp"
 #include "cpu.hpp"
 #include "display.hpp"
 #include "dump.hpp"
@@ -28,6 +31,63 @@ static bool parse_number(const std::string& word, long& out) {
     } catch (...) {
         return false;
     }
+}
+
+// Lab 8: прочитати весь файл у рядок. false — якщо файл не відкрився.
+static bool read_file(const std::string& path, std::string& out) {
+    std::ifstream in(path);
+    if (!in) {
+        return false;
+    }
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    out = buf.str();
+    return true;
+}
+
+// Lab 8: `lex <file>` — по токену на рядок.
+static void lex_file(const std::string& path) {
+    std::string src, error;
+    if (!read_file(path, src)) {
+        std::cout << "cannot open " << path << '\n';
+        return;
+    }
+    Token* head = lex(src, error);
+    if (!head) {
+        std::cout << "lex error: " << error << '\n';
+        return;
+    }
+    for (Token* t = head; t; t = t->next) {
+        std::cout << std::setw(4) << t->line << "  " << std::left << std::setw(9)
+                  << kind_name(t->kind) << std::right << t->text << '\n';
+    }
+    destroy(head);  // список наш — і звільняємо його ми
+}
+
+// Lab 8: текст -> токени -> байти в пам'ять з 0x000. false — якщо щось не так.
+static bool load_asm(const std::string& path, Memory& mem, bool verbose) {
+    std::string src, error;
+    if (!read_file(path, src)) {
+        std::cout << "cannot open " << path << '\n';
+        return false;
+    }
+    Token* head = lex(src, error);
+    if (!head) {
+        std::cout << path << ": lex error: " << error << '\n';
+        return false;
+    }
+    std::size_t size = 0;
+    bool ok = assemble(head, mem, size, error);
+    destroy(head);
+    if (!ok) {
+        std::cout << path << ": asm error: " << error << '\n';
+        return false;
+    }
+    if (verbose) {
+        std::cout << "assembled " << size << " bytes at 0x000\n";
+        dump_range(mem, 0, size);
+    }
+    return true;
 }
 
 static void print_help() {
@@ -50,13 +110,26 @@ static void print_help() {
               << "  frame             draw a 64x32 border from C++\n"
               << "  layout            sizeof(CPU) and where each field lies\n"
               << "  stack             SP and the top bytes of the stack\n"
+              << "  lex <file>        print the tokens of an .asm file, one per line\n"
+              << "  asm <file>        assemble an .asm file into memory at 0x000\n"
               << "  quit              leave\n";
 }
 
-int main() {
+int main(int argc, char** argv) {
     Memory mem; // 4096 bytes, on the stack, zeroed by the {} in memory.hpp
     CPU cpu;
     cpu.mem = &mem; // «ось твоя пам'ять» — `&` теж розбирає Lab 3
+
+    // Lab 8: `./ember programs/hello.asm` — зібрати, виконати до HALT, вийти.
+    // Без аргументу — як і раніше, REPL.
+    if (argc >= 2) {
+        if (!load_asm(argv[1], mem, false)) {
+            return 1;
+        }
+        run(cpu);
+        std::cout << '\n';
+        return cpu.error ? 1 : 0;
+    }
 
     std::cout << "ember 0.1 - 4096 bytes of memory you can see. Type `help`.\n";
 
@@ -197,6 +270,15 @@ int main() {
             for (int y = 0; y < SCREEN_H; ++y) {
                 plot(mem, 0, y);
                 plot(mem, SCREEN_W - 1, y);
+            }
+        } else if (cmd == "lex" || cmd == "asm") {
+            std::string path;
+            if (!(words >> path)) {
+                std::cout << "usage: " << cmd << " <file.asm>\n";
+            } else if (cmd == "lex") {
+                lex_file(path);
+            } else {
+                load_asm(path, mem, true);
             }
         } else if (cmd == "stack") {
             dump_stack(cpu);

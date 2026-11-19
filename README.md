@@ -967,3 +967,183 @@ SP=0xfff  (empty)
 `120` за **60** кроків, `SP` повернувся в `0xFFF` — рівно як обіцяє ISA. Для `fact(0)` і `fact(1)`
 (друга пара байтів `20 00` / `20 01`) — `1` за 9 і 12 кроків відповідно
 (`programs/lab07-fact0.txt`, `programs/lab07-fact1.txt`).
+
+---
+
+# Lab 08 — Дайте їй мову
+
+**Рівень: Basic** — «воно читає текст». Асемблер **без міток**, в один прохід.
+
+```txt
+текст .asm  ->  lex()  ->  список Token  ->  assemble()  ->  байти з 0x000  ->  run()
+```
+
+## Що додалось
+
+| Файл | Що там |
+|---|---|
+| `src/asm/token.hpp` | вузол `Token` (дано), `destroy()`, `kind_name()` |
+| `src/asm/lexer.hpp`, `src/asm/lexer.cpp` | каркас `lex()` (дано) і мій `number()` |
+| `src/asm/assembler.hpp`, `src/asm/assembler.cpp` | однопрохідний асемблер без міток |
+| `src/main.cpp` | `./ember файл.asm` збирає й виконує; у REPL команди `lex <file>` і `asm <file>` |
+| `programs/*.asm` | `hello.asm`, `countdown.asm`, `fact.asm`, `roundtrip.asm` і `bad-*.asm` для помилок |
+| `CMakeLists.txt` | додано `src/asm/lexer.cpp`, `src/asm/assembler.cpp` |
+
+## Збірка й запуск
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+./build/ember programs/hello.asm
+```
+
+Без аргументу `ember`, як і раніше, відкриває REPL для колупання байтів.
+
+## M1 — лексер і `number()`
+
+`number()` викликається, коли курсор стоїть на цифрі. Він розпізнає три форми — `0x41`, `0b101`, `65` — і
+**відхиляє з номером рядка**:
+
+- `0x` / `0b`, після яких немає жодної цифри (`0xGG`, `0x`);
+- число, одразу за яким іде буква, цифра чи `_` (`12ab`, `0x1G`, `0b102`).
+
+Значення `number()` не рахує, лише перевіряє форму; рахує асемблер.
+
+```txt
+$ ./build/ember programs/bad-hex.asm         ; рядок 3: LOADI A, 0xGG
+programs/bad-hex.asm: lex error: line 3: bad number: no hex digits after 0x
+$ ./build/ember programs/bad-empty-hex.asm   ; рядок 1: LOADI A, 0x
+programs/bad-empty-hex.asm: lex error: line 1: bad number: no hex digits after 0x
+$ ./build/ember programs/bad-decimal.asm     ; рядок 3: LOADI A, 12ab
+programs/bad-decimal.asm: lex error: line 3: bad number '12ab'
+$ ./build/ember programs/bad-char.asm        ; LOADI A, 65 @
+programs/bad-char.asm: lex error: line 1: unexpected character '@'
+```
+
+### `lex programs/hello.asm`
+
+```txt
+ember> lex programs/hello.asm
+   1  Newline  \n
+   2  Ident    LOADI
+   2  Ident    A
+   2  Comma    ,
+   2  Number   72
+   2  Newline  \n
+   3  Ident    OUT
+   3  Newline  \n
+   4  Ident    LOADI
+   4  Ident    A
+   4  Comma    ,
+   4  Number   0x45
+   4  Newline  \n
+   5  Ident    OUT
+   5  Newline  \n
+   6  Ident    LOADI
+   6  Ident    A
+   6  Comma    ,
+   6  Number   76
+   6  Newline  \n
+   7  Ident    OUT
+   7  Newline  \n
+   8  Ident    OUT
+   8  Newline  \n
+   9  Ident    LOADI
+   9  Ident    A
+   9  Comma    ,
+   9  Number   0x4F
+   9  Newline  \n
+  10  Ident    OUT
+  10  Newline  \n
+  11  Ident    LOADI
+  11  Ident    A
+  11  Comma    ,
+  11  Number   0b00100001
+  11  Newline  \n
+  12  Ident    OUT
+  12  Newline  \n
+  13  Ident    HALT
+  13  Newline  \n
+  14  Eof
+```
+
+Рядок 1 — коментар: його з'їв лексер, лишився тільки `Newline`. Список токенів звільняє `destroy()`;
+Debug-збірка з ASan/LeakSanitizer на Linux жодного витоку не показує — ні на успішному шляху,
+ні на помилках.
+
+## M2 — асемблер без міток
+
+Кожен рядок перетворюється на **форму**: мнемоніка й регістри великими літерами, кожне число
+замінене на `n`. Форма шукається в таблиці, переписаній з ISA.uk.md:
+
+```txt
+LOADI A, 65        ->  "LOADI A,n"     ->  Op::LoadiA, розмір 2  ->  20 41
+store [0x800], b   ->  "STORE [n],B"   ->  Op::StoreB, розмір 3  ->  25 00 08
+JNZ 2              ->  "JNZ n"         ->  Op::Jnz,    розмір 3  ->  32 02 00
+```
+
+Розмір із таблиці каже, що робити з числом: розмір 2 — один байт (і перевірка `0..255`),
+розмір 3 — два байти через `set16` з Lab 3, **молодший уперед** (і перевірка `< 4096`).
+Опкод береться з `enum class Op` з Lab 6, тож асемблер і `step()` не можуть розійтись у числах.
+
+У таблиці лише ті інструкції, які вміє мій `step()`. `MOV`, усе з `H`, `OUTS` — ні
+(див. обмеження нижче).
+
+Помилки — теж з номером рядка:
+
+```txt
+programs/bad-imm.asm: asm error: line 1: immediate 300 does not fit in a byte (0..255)
+programs/bad-label.asm: asm error: line 1: labels are not supported (one-pass assembler, Basic)
+programs/bad-mnemonic.asm: asm error: line 1: unknown instruction 'MOV A,B'
+```
+
+### Перевірка на повний оберт
+
+```txt
+; programs/roundtrip.asm
+HALT
+JMP 0x0123
+
+ember> asm programs/roundtrip.asm
+assembled 4 bytes at 0x000
+0000  00 30 23 01 00 00 00 00 00 00 00 00 00 00 00 00  |.0#.............|
+```
+
+`HALT` → `00`, `JMP 0x0123` → `30 23 01`: опкод, потім адреса молодшим байтом уперед.
+
+## `hello.asm` і ще дві програми
+
+```txt
+$ ./build/ember programs/hello.asm
+HELLO!
+$ ./build/ember programs/countdown.asm
+3 2 1
+$ ./build/ember programs/fact.asm
+120
+```
+
+`fact.asm` — той самий `fact(5)` з ISA.uk.md §6, що в Lab 7 я набивав тридцятьма командами `set`.
+Асемблер видав **ті самі байти**: дамп після `asm programs/fact.asm` порівняний `diff` з
+дампом із `programs/lab07-fact5.txt` — однакові.
+
+```txt
+ember> asm programs/fact.asm
+assembled 30 bytes at 0x000
+0000  20 05 54 07 00 03 00 21 00 1a 31 1b 00 21 01 1a  | .T....!..1..!..|
+0010  31 1b 00 50 19 54 07 00 53 1b 55 20 01 55 00 00  |1..P.T..S.U .U..|
+ember> run
+120
+60 steps
+PC=0007  SP=fff  A=78  B=05  (A=120 B=5)  Z=0 N=0 C=0  [halted]
+```
+
+## Обмеження (чесно)
+
+- **Немає міток.** Адреси для `JMP`/`JZ`/`CALL` пишуться числами й рахуються руками — у `fact.asm`
+  це `0x0007` і `0x001B`. Вставиш одну інструкцію вище — і всі ці числа треба переписати.
+  Саме від цього рятують мітки й другий прохід (рівень Standard).
+- Одна інструкція на рядок, без макросів, без виразів в операндах (`0x800 + 1` не можна).
+- Немає директив даних: рядок у регіон даних текстом не покласти, тому `hello.asm` друкує
+  кожну літеру через `LOADI` + `OUT`.
+- Лише інструкції, які вміє мій `step()` (рівень Basic у кожній лабі): немає `MOV`, `H`
+  (`LOADH`, `INCH`, …), `OUTS`, `UNPLOT`, `JC`/`JNC`, `ALLOC`.

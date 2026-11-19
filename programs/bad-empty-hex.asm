@@ -1,0 +1,2 @@
+LOADI A, 0x
+HALT

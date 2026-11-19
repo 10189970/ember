@@ -1,0 +1,2 @@
+loop: OUT
+HALT
