@@ -1,0 +1,6 @@
+frame
+show
+dump 0xA00 32
+dump 0xAF0 16
+plot 64 0
+quit

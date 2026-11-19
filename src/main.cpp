@@ -13,6 +13,7 @@
 
 #include "alu.hpp"
 #include "cpu.hpp"
+#include "display.hpp"
 #include "dump.hpp"
 #include "memory.hpp"
 
@@ -43,6 +44,10 @@ static void print_help() {
               << "  run               step until HALT or error\n"
               << "  get16 <addr>      read 2 bytes as one 16-bit value (low byte first)\n"
               << "  set16 <addr> <v>  write a 16-bit value as 2 bytes (low byte first)\n"
+              << "  show              draw the screen (VRAM at 0xA00)\n"
+              << "  cls               clear the screen\n"
+              << "  plot <x> <y>      light one pixel from C++\n"
+              << "  frame             draw a 64x32 border from C++\n"
               << "  quit              leave\n";
 }
 
@@ -168,6 +173,28 @@ int main() {
                 // OUT друкує без переводу рядка, тож закриваємо рядок тут
                 std::cout << "\n" << steps << " steps\n";
                 dump_regs(cpu);
+            }
+        } else if (cmd == "show") {
+            show(mem);
+        } else if (cmd == "cls") {
+            clear(mem);
+        } else if (cmd == "plot") {
+            std::string xs, ys;
+            long x = 0, y = 0;
+            if (!(words >> xs) || !(words >> ys) || !parse_number(xs, x) || !parse_number(ys, y)) {
+                std::cout << "usage: plot <x> <y>\n";
+            } else if (!plot(mem, (int)x, (int)y)) {
+                std::cout << "pixel (" << x << ", " << y << ") is outside 0..63 x 0..31\n";
+            }
+        } else if (cmd == "frame") {
+            // Рамка: верхній і нижній рядок, лівий і правий стовпчик.
+            for (int x = 0; x < SCREEN_W; ++x) {
+                plot(mem, x, 0);
+                plot(mem, x, SCREEN_H - 1);
+            }
+            for (int y = 0; y < SCREEN_H; ++y) {
+                plot(mem, 0, y);
+                plot(mem, SCREEN_W - 1, y);
             }
         } else if (cmd == "regs") {
             dump_regs(cpu);

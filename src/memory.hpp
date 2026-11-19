@@ -19,6 +19,8 @@ const std::size_t CODE_LO = 0x000;
 const std::size_t CODE_HI = 0x7FF;
 const std::size_t DATA_LO = 0x800;
 const std::size_t DATA_HI = 0x9FF;
+const std::size_t VRAM_LO = 0xA00;  // Lab 5: екран 64x32, біт на піксель
+const std::size_t VRAM_HI = 0xAFF;
 
 struct Memory {
     // The `{}` zero-initializes the whole array.

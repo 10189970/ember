@@ -1,12 +1,14 @@
 // cpu.cpp — ДАНО форму. Ваші — case для групи 0x1_ і dump_regs() (Lab 2),
 //           група 0x2_, OUT/OUTN, перевірка меж і run() (Lab 3),
-//           повний декодер, CMP, група 0x3_ і ліміт кроків (Lab 4).
+//           повний декодер, CMP, група 0x3_ і ліміт кроків (Lab 4),
+//           група 0x4_ — екран (Lab 5).
 #include "cpu.hpp"
 
 #include <iomanip>
 #include <iostream>
 
 #include "alu.hpp"
+#include "display.hpp"
 
 // Опкод — це два бітові поля: старший півбайт — група, молодший — індекс.
 struct Decoded {
@@ -179,6 +181,27 @@ static void exec_jump(CPU& cpu, Byte op) {
     }
 }
 
+// Група 0x4_: екран. Відеопам'ять — це звичайні байти пам'яті на 0xA00,
+// тож ці інструкції лише зручніші за ручні STORE.
+static void exec_screen(CPU& cpu, Byte op) {
+    switch (op) {
+    case OP_CLS:
+        clear(*cpu.mem);
+        break;
+    case OP_PLOT:
+        // C = 1, якщо (A, B) поза екраном; Z і N не чіпаємо
+        cpu.f.c = !plot(*cpu.mem, cpu.a, cpu.b);
+        break;
+    case OP_SHOW:
+        show(*cpu.mem);
+        break;
+    default:
+        unknown(cpu, op);  // 0x42 UNPLOT — opt
+        return;
+    }
+    cpu.pc += 1;
+}
+
 void step(CPU& cpu) {
     if (cpu.halted) {
         std::cout << "halted\n";
@@ -213,8 +236,11 @@ void step(CPU& cpu) {
     case 0x3:
         exec_jump(cpu, op);
         break;
+    case 0x4:
+        exec_screen(cpu, op);
+        break;
     default:
-        unknown(cpu, op);  // групи 0x4_ і далі — наступні лаби
+        unknown(cpu, op);  // групи 0x5_ і далі — наступні лаби
         break;
     }
 }
