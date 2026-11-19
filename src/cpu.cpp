@@ -1,9 +1,10 @@
 // cpu.cpp — ДАНО форму. Ваші — case для групи 0x1_ і dump_regs() (Lab 2),
 //           група 0x2_, OUT/OUTN, перевірка меж і run() (Lab 3),
 //           повний декодер, CMP, група 0x3_ і ліміт кроків (Lab 4),
-//           група 0x4_ — екран (Lab 5).
+//           група 0x4_ — екран (Lab 5), перехід на enum class Op (Lab 6).
 #include "cpu.hpp"
 
+#include <cstddef>
 #include <iomanip>
 #include <iostream>
 
@@ -34,30 +35,30 @@ static void fail(CPU& cpu, const char* what, std::size_t addr) {
 // Невідомий опкод — це помилка, а не тихий NOP (Lab 4, M1).
 // Байт-сміття в пам'яті має зупинити машину, а не «якось виконатись».
 // PC не рухаємо: у regs видно, де саме лежить цей байт.
-static void unknown(CPU& cpu, Byte op) {
+static void unknown(CPU& cpu, Op op) {
     std::cout << "error: unknown opcode 0x" << std::hex << std::setw(2) << std::setfill('0')
-              << (int)op << " at 0x" << std::setw(3) << cpu.pc << std::dec << std::setfill(' ')
+              << (int)(Byte)op << " at 0x" << std::setw(3) << cpu.pc << std::dec << std::setfill(' ')
               << '\n';
     cpu.error = true;
     cpu.halted = true;
 }
 
 // Група 0x0_: керування.
-static void exec_control(CPU& cpu, Byte op) {
+static void exec_control(CPU& cpu, Op op) {
     switch (op) {
-    case OP_HALT:
+    case Op::Halt:
         cpu.halted = true;
         cpu.pc += 1;  // розмір HALT з таблиці — 1
         break;
-    case OP_NOP:
+    case Op::Nop:
         cpu.pc += 1;
         break;
-    case OP_OUT:
+    case Op::Out:
         // A — це Byte, тобто uint8_t, а cout друкує його як символ. Lab 1 :)
         std::cout << cpu.a << std::flush;
         cpu.pc += 1;
         break;
-    case OP_OUTN:
+    case Op::OutN:
         // (int), щоб надрукувалось число, а не символ
         std::cout << (int)cpu.a << ' ' << std::flush;
         cpu.pc += 1;
@@ -69,19 +70,19 @@ static void exec_control(CPU& cpu, Byte op) {
 }
 
 // Група 0x1_: ALU. Усі інструкції цієї лаби мають розмір 1.
-static void exec_alu(CPU& cpu, Byte op) {
+static void exec_alu(CPU& cpu, Op op) {
     switch (op) {
-    case OP_ADD: cpu.a = alu_add(cpu.a, cpu.b, cpu.f); break;
-    case OP_SUB: cpu.a = alu_sub(cpu.a, cpu.b, cpu.f); break;
-    case OP_AND: cpu.a = alu_and(cpu.a, cpu.b, cpu.f); break;
-    case OP_OR:  cpu.a = alu_or(cpu.a, cpu.b, cpu.f);  break;
-    case OP_XOR: cpu.a = alu_xor(cpu.a, cpu.b, cpu.f); break;
-    case OP_NOT: cpu.a = alu_not(cpu.a, cpu.f);        break;
-    case OP_SHL: cpu.a = alu_shl(cpu.a, cpu.f);        break;
-    case OP_SHR: cpu.a = alu_shr(cpu.a, cpu.f);        break;
-    case OP_INC: cpu.a = alu_inc(cpu.a, cpu.f);        break;
-    case OP_DEC: cpu.a = alu_dec(cpu.a, cpu.f);        break;
-    case OP_CMP:
+    case Op::Add: cpu.a = alu_add(cpu.a, cpu.b, cpu.f); break;
+    case Op::Sub: cpu.a = alu_sub(cpu.a, cpu.b, cpu.f); break;
+    case Op::And: cpu.a = alu_and(cpu.a, cpu.b, cpu.f); break;
+    case Op::Or:  cpu.a = alu_or(cpu.a, cpu.b, cpu.f);  break;
+    case Op::Xor: cpu.a = alu_xor(cpu.a, cpu.b, cpu.f); break;
+    case Op::Not: cpu.a = alu_not(cpu.a, cpu.f);        break;
+    case Op::Shl: cpu.a = alu_shl(cpu.a, cpu.f);        break;
+    case Op::Shr: cpu.a = alu_shr(cpu.a, cpu.f);        break;
+    case Op::Inc: cpu.a = alu_inc(cpu.a, cpu.f);        break;
+    case Op::Dec: cpu.a = alu_dec(cpu.a, cpu.f);        break;
+    case Op::Cmp:
         // Те саме віднімання, що й SUB, і ті самі прапорці (C = позика),
         // але результат нікуди не пишемо: A лишається, яким був.
         alu_sub(cpu.a, cpu.b, cpu.f);
@@ -95,18 +96,18 @@ static void exec_alu(CPU& cpu, Byte op) {
 
 // Розмір інструкції в байтах — рівно з таблиці ISA.uk.md, а не на око.
 // Стільки байтів step читає, починаючи з PC, і на стільки рухає PC.
-static std::size_t instr_size(Byte op) {
+static std::size_t instr_size(Op op) {
     switch (op) {
-    case OP_LOADI_A:
-    case OP_LOADI_B:
+    case Op::LoadiA:
+    case Op::LoadiB:
         return 2;  // опкод + imm8
-    case OP_LOAD_A:
-    case OP_LOAD_B:
-    case OP_STORE_A:
-    case OP_STORE_B:
-    case OP_JMP:
-    case OP_JZ:
-    case OP_JNZ:
+    case Op::LoadA:
+    case Op::LoadB:
+    case Op::StoreA:
+    case Op::StoreB:
+    case Op::Jmp:
+    case Op::Jz:
+    case Op::Jnz:
         return 3;  // опкод + addr16 (молодший байт, старший байт)
     default:
         return 1;
@@ -116,20 +117,20 @@ static std::size_t instr_size(Byte op) {
 // Група 0x2_: пересилання даних.
 // Операнд лежить у пам'яті ОДРАЗУ ПІСЛЯ опкода: imm8 за адресою pc + 1,
 // addr16 — у pc + 1 (молодший) і pc + 2 (старший). Тому get16(pc + 1).
-static void exec_data(CPU& cpu, Byte op) {
+static void exec_data(CPU& cpu, Op op) {
     Memory& mem = *cpu.mem;  // `*` — піти за вказівником до самої пам'яті
 
     switch (op) {
-    case OP_LOADI_A:
+    case Op::LoadiA:
         cpu.a = mem_get(mem, cpu.pc + 1);
         break;
-    case OP_LOADI_B:
+    case Op::LoadiB:
         cpu.b = mem_get(mem, cpu.pc + 1);
         break;
-    case OP_LOAD_A:
-    case OP_LOAD_B:
-    case OP_STORE_A:
-    case OP_STORE_B: {
+    case Op::LoadA:
+    case Op::LoadB:
+    case Op::StoreA:
+    case Op::StoreB: {
         std::uint16_t addr = get16(mem, cpu.pc + 1);
         // addr16 може бути аж до 0xFFFF, а пам'ять — лише до 0xFFF.
         // Не загортаємо й не читаємо тихий нуль: це помилка програми.
@@ -137,11 +138,11 @@ static void exec_data(CPU& cpu, Byte op) {
             fail(cpu, "address out of memory:", addr);
             return;  // PC не рухаємо, щоб у regs було видно, ДЕ впало
         }
-        if (op == OP_LOAD_A) {
+        if (op == Op::LoadA) {
             cpu.a = mem_get(mem, addr);
-        } else if (op == OP_LOAD_B) {
+        } else if (op == Op::LoadB) {
             cpu.b = mem_get(mem, addr);
-        } else if (op == OP_STORE_A) {
+        } else if (op == Op::StoreA) {
             mem_set(mem, addr, cpu.a);
         } else {
             mem_set(mem, addr, cpu.b);
@@ -157,14 +158,14 @@ static void exec_data(CPU& cpu, Byte op) {
 }
 
 // Група 0x3_: стрибки. Стрибок — це просто запис нової адреси в PC.
-static void exec_jump(CPU& cpu, Byte op) {
+static void exec_jump(CPU& cpu, Op op) {
     std::uint16_t target = get16(*cpu.mem, cpu.pc + 1);
 
     bool take = false;  // чи спрацьовує стрибок
     switch (op) {
-    case OP_JMP: take = true;        break;
-    case OP_JZ:  take = cpu.f.z;     break;
-    case OP_JNZ: take = !cpu.f.z;    break;
+    case Op::Jmp: take = true;        break;
+    case Op::Jz:  take = cpu.f.z;     break;
+    case Op::Jnz: take = !cpu.f.z;    break;
     default:
         unknown(cpu, op);  // 0x33 JC, 0x34 JNC — opt
         return;
@@ -183,16 +184,16 @@ static void exec_jump(CPU& cpu, Byte op) {
 
 // Група 0x4_: екран. Відеопам'ять — це звичайні байти пам'яті на 0xA00,
 // тож ці інструкції лише зручніші за ручні STORE.
-static void exec_screen(CPU& cpu, Byte op) {
+static void exec_screen(CPU& cpu, Op op) {
     switch (op) {
-    case OP_CLS:
+    case Op::Cls:
         clear(*cpu.mem);
         break;
-    case OP_PLOT:
+    case Op::Plot:
         // C = 1, якщо (A, B) поза екраном; Z і N не чіпаємо
         cpu.f.c = !plot(*cpu.mem, cpu.a, cpu.b);
         break;
-    case OP_SHOW:
+    case Op::Show:
         show(*cpu.mem);
         break;
     default:
@@ -213,7 +214,11 @@ void step(CPU& cpu) {
         return;
     }
     // *cpu.mem — «пам'ять, на яку вказує cpu.mem».
-    Byte op = mem_get(*cpu.mem, cpu.pc);
+    Byte raw = mem_get(*cpu.mem, cpu.pc);
+    // Lab 6: сирий байт -> Op. Приведення до enum із фіксованим типом uint8_t
+    // визначене для БУДЬ-ЯКОГО байта, навіть якого немає в переліку, — тому
+    // сміття не стає UB, а потрапляє в `default:` і дає «unknown opcode».
+    Op op = (Op)raw;
 
     // Уся інструкція (опкод + операнди) має влізти в пам'ять. Інакше
     // ми б прочитали операнд за MEM_SIZE.
@@ -223,7 +228,7 @@ void step(CPU& cpu) {
     }
 
     // Розводимо за полем «група», а не за магічним числом на кожну інструкцію.
-    switch (decode(op).group) {
+    switch (decode(raw).group) {
     case 0x0:
         exec_control(cpu, op);
         break;
@@ -242,6 +247,41 @@ void step(CPU& cpu) {
     default:
         unknown(cpu, op);  // групи 0x5_ і далі — наступні лаби
         break;
+    }
+}
+
+void print_layout() {
+    std::cout << "sizeof(Flags) = " << sizeof(Flags) << ", sizeof(CPU) = " << sizeof(CPU)
+              << ", sizeof(Op) = " << sizeof(Op) << '\n'
+              << "  offset  size  field\n";
+    // offsetof(T, поле) — на скільки байтів поле відстоїть від початку структури
+    struct Row {
+        const char* name;
+        std::size_t offset;
+        std::size_t size;
+    };
+    const Row rows[] = {
+        {"Memory* mem", offsetof(CPU, mem), sizeof(CPU::mem)},
+        {"uint16_t pc", offsetof(CPU, pc), sizeof(CPU::pc)},
+        {"Byte a", offsetof(CPU, a), sizeof(CPU::a)},
+        {"Byte b", offsetof(CPU, b), sizeof(CPU::b)},
+        {"Flags f", offsetof(CPU, f), sizeof(CPU::f)},
+        {"bool halted", offsetof(CPU, halted), sizeof(CPU::halted)},
+        {"bool error", offsetof(CPU, error), sizeof(CPU::error)},
+    };
+    std::size_t expected = 0;  // де мало б початись наступне поле без дірок
+    for (const Row& r : rows) {
+        if (r.offset > expected) {
+            std::cout << "  " << std::setw(6) << expected << "  " << std::setw(4)
+                      << r.offset - expected << "  (padding)\n";
+        }
+        std::cout << "  " << std::setw(6) << r.offset << "  " << std::setw(4) << r.size << "  "
+                  << r.name << '\n';
+        expected = r.offset + r.size;
+    }
+    if (sizeof(CPU) > expected) {
+        std::cout << "  " << std::setw(6) << expected << "  " << std::setw(4)
+                  << sizeof(CPU) - expected << "  (padding at the end)\n";
     }
 }
 

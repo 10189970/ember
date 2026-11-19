@@ -48,6 +48,7 @@ static void print_help() {
               << "  cls               clear the screen\n"
               << "  plot <x> <y>      light one pixel from C++\n"
               << "  frame             draw a 64x32 border from C++\n"
+              << "  layout            sizeof(CPU) and where each field lies\n"
               << "  quit              leave\n";
 }
 
@@ -196,6 +197,8 @@ int main() {
                 plot(mem, 0, y);
                 plot(mem, SCREEN_W - 1, y);
             }
+        } else if (cmd == "layout") {
+            print_layout();
         } else if (cmd == "regs") {
             dump_regs(cpu);
         } else if (cmd == "step") {

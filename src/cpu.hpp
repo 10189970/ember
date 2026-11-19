@@ -4,40 +4,48 @@
 #include "memory.hpp"
 
 // Коди операцій — саме з ISA.uk.md, свого не вигадуйте.
-// Поки це звичайні константи (Lab 1, `const`). У Lab 6 вони стануть `enum class Op`.
-const Byte OP_HALT = 0x00;
-const Byte OP_NOP  = 0x01;
-const Byte OP_OUT  = 0x02;   // Lab 3: надрукувати A як символ
-const Byte OP_OUTN = 0x03;   // Lab 3: надрукувати A як десяткове число і пробіл
-const Byte OP_ADD  = 0x10;
-const Byte OP_SUB  = 0x11;
-const Byte OP_AND  = 0x12;
-const Byte OP_OR   = 0x13;
-const Byte OP_XOR  = 0x14;
-const Byte OP_NOT  = 0x15;
-const Byte OP_SHL  = 0x16;
-const Byte OP_SHR  = 0x17;
-const Byte OP_INC  = 0x18;
-const Byte OP_DEC  = 0x19;
-const Byte OP_CMP  = 0x1A;   // Lab 4: A - B лише заради прапорців, результат викидається
+// Lab 6: замість окремих `const Byte OP_*` — перелік. `: std::uint8_t` каже,
+// що під кожним значенням лежить рівно один байт, як і в пам'яті ember.
+// `enum class` не змішується з цілими без явного приведення: Op::Add не можна
+// випадково додати до числа чи порівняти з сирим байтом.
+enum class Op : std::uint8_t {
+    // 0x0_ — керування й вивід
+    Halt = 0x00,
+    Nop  = 0x01,
+    Out  = 0x02,   // надрукувати A як символ
+    OutN = 0x03,   // надрукувати A як десяткове число і пробіл
 
-// Група 0x2_ — пересилання даних (Lab 3, рівень Basic).
-const Byte OP_LOADI_A  = 0x20;  // LOADI A, imm8       розмір 2
-const Byte OP_LOADI_B  = 0x21;  // LOADI B, imm8       розмір 2
-const Byte OP_LOAD_A   = 0x22;  // LOAD A, [addr16]    розмір 3
-const Byte OP_LOAD_B   = 0x23;  // LOAD B, [addr16]    розмір 3
-const Byte OP_STORE_A  = 0x24;  // STORE [addr16], A   розмір 3
-const Byte OP_STORE_B  = 0x25;  // STORE [addr16], B   розмір 3
+    // 0x1_ — ALU
+    Add = 0x10,
+    Sub = 0x11,
+    And = 0x12,
+    Or  = 0x13,
+    Xor = 0x14,
+    Not = 0x15,
+    Shl = 0x16,
+    Shr = 0x17,
+    Inc = 0x18,
+    Dec = 0x19,
+    Cmp = 0x1A,    // A - B лише заради прапорців, результат викидається
 
-// Група 0x3_ — стрибки (Lab 4, рівень Basic). Усі по 3 байти: опкод + addr16.
-const Byte OP_JMP = 0x30;  // завжди
-const Byte OP_JZ  = 0x31;  // якщо Z
-const Byte OP_JNZ = 0x32;  // якщо не Z
+    // 0x2_ — пересилання даних
+    LoadiA = 0x20,  // LOADI A, imm8       розмір 2
+    LoadiB = 0x21,  // LOADI B, imm8       розмір 2
+    LoadA  = 0x22,  // LOAD A, [addr16]    розмір 3
+    LoadB  = 0x23,  // LOAD B, [addr16]    розмір 3
+    StoreA = 0x24,  // STORE [addr16], A   розмір 3
+    StoreB = 0x25,  // STORE [addr16], B   розмір 3
 
-// Група 0x4_ — екран (Lab 5, рівень Basic). Усі по 1 байту.
-const Byte OP_CLS  = 0x40;  // занулити відеопам'ять
-const Byte OP_PLOT = 0x41;  // піксель x = A, y = B; за межами — C = 1
-const Byte OP_SHOW = 0x43;  // намалювати екран у терміналі
+    // 0x3_ — стрибки, усі по 3 байти: опкод + addr16
+    Jmp = 0x30,    // завжди
+    Jz  = 0x31,    // якщо Z
+    Jnz = 0x32,    // якщо не Z
+
+    // 0x4_ — екран, усі по 1 байту
+    Cls  = 0x40,   // занулити відеопам'ять
+    Plot = 0x41,   // піксель x = A, y = B; за межами — C = 1
+    Show = 0x43,   // намалювати екран у терміналі
+};
 
 // Ліміт кроків для `run`: зламаний JMP (наприклад, сам на себе) не має
 // повісити процес. 100000 — з запасом для будь-якої програми цього семестру.
@@ -62,6 +70,9 @@ struct CPU {
 };
 
 void step(CPU& cpu);
+
+// Lab 6: надрукувати sizeof(CPU) і зсув кожного поля (offsetof).
+void print_layout();
 void dump_regs(const CPU& cpu);
 
 // Крокувати, поки машина не зупиниться (HALT або помилка), але не більше
