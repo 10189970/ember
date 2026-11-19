@@ -14,6 +14,12 @@ using Byte = std::uint8_t;
 // `const` means: this name will not be used to change these bits.
 const std::size_t MEM_SIZE = 4096;
 
+// Карта пам'яті з ISA.uk.md §2 (Lab 3): код живе з 0x000, дані — з 0x800.
+const std::size_t CODE_LO = 0x000;
+const std::size_t CODE_HI = 0x7FF;
+const std::size_t DATA_LO = 0x800;
+const std::size_t DATA_HI = 0x9FF;
+
 struct Memory {
     // The `{}` zero-initializes the whole array.
     // Experiment (Lab 1, M4): delete the `{}`, rebuild, `dump`. What appears?
@@ -30,3 +36,8 @@ Byte mem_get(const Memory& mem, std::size_t addr);
 // outside the box. Returning false is how main.cpp knows to print a message.
 // TODO(lab-01, M3): implement in memory.cpp.
 bool mem_set(Memory& mem, std::size_t addr, Byte value);
+
+// Lab 3, M1. 16-бітне значення в пам'яті займає ДВА байти, молодший перший
+// (little-endian): 0x1234 лежить як `34 12`.
+std::uint16_t get16(const Memory& mem, std::size_t addr);              // ДАНО
+bool set16(Memory& mem, std::size_t addr, std::uint16_t value);        // моє

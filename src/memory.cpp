@@ -23,3 +23,27 @@ bool mem_set(Memory& mem, std::size_t addr, Byte value) {
         	return false;
         }
 }
+
+// ---- Lab 3, M1 ----
+
+// ДАНО. Прочитати два байти як одне 16-бітне значення, молодший перший.
+std::uint16_t get16(const Memory& mem, std::size_t addr) {
+    Byte lo = mem_get(mem, addr);
+    Byte hi = mem_get(mem, addr + 1);
+    return (std::uint16_t)(lo | (hi << 8));
+}
+
+// Дзеркало get16: розрізати значення на два байти і покласти молодший першим.
+//   0x1234 -> lo = 0x34 (маска молодших 8 бітів), hi = 0x12 (зсув на 8 праворуч)
+// Якщо другий байт не влазить у пам'ять — нічого не пишемо взагалі,
+// щоб не лишити в пам'яті половину числа.
+bool set16(Memory& mem, std::size_t addr, std::uint16_t value) {
+    if (addr + 1 >= MEM_SIZE) {
+        return false;
+    }
+    Byte lo = (Byte)(value & 0xFF);
+    Byte hi = (Byte)((value >> 8) & 0xFF);
+    mem_set(mem, addr, lo);
+    mem_set(mem, addr + 1, hi);
+    return true;
+}

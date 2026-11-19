@@ -16,8 +16,6 @@
 #include "dump.hpp"
 #include "memory.hpp"
 
-#include "cpu.hpp"
-
 // Turn a word into a number. Accepts decimal (65) and hex (0x41).
 // Returns false if the word is not a number at all.
 static bool parse_number(const std::string& word, long& out) {
@@ -34,6 +32,7 @@ static bool parse_number(const std::string& word, long& out) {
 static void print_help() {
     std::cout << "commands:\n"
               << "  dump              print all " << MEM_SIZE << " bytes\n"
+              << "  dump <addr> <len> print only the rows covering addr..addr+len-1\n"
               << "  get <addr>        show one byte four ways\n"
               << "  set <addr> <val>  write one byte (dec or 0x hex)\n"
               << "  help              this list\n"
@@ -41,6 +40,9 @@ static void print_help() {
               << "  reg <a|b> <val>   put a value into a CPU register\n"
               << "  regs              print PC A B Z N C\n"
               << "  step              execute one instruction at PC\n"
+              << "  run               step until HALT or error\n"
+              << "  get16 <addr>      read 2 bytes as one 16-bit value (low byte first)\n"
+              << "  set16 <addr> <v>  write a 16-bit value as 2 bytes (low byte first)\n"
               << "  quit              leave\n";
 }
 
@@ -74,7 +76,16 @@ int main() {
         } else if (cmd == "help") {
             print_help();
         } else if (cmd == "dump") {
-            dump(mem);
+            std::string a, n;
+            long addr = 0, len = 0;
+            if (!(words >> a)) {
+                dump(mem);  // без аргументів — уся пам'ять, як раніше
+            } else if (!(words >> n) || !parse_number(a, addr) || !parse_number(n, len) ||
+                       addr < 0 || len <= 0) {
+                std::cout << "usage: dump [<addr> <len>]\n";
+            } else {
+                dump_range(mem, (std::size_t)addr, (std::size_t)len);
+            }
         } else if (cmd == "get") {
             std::string a;
             long addr = 0;
@@ -123,6 +134,40 @@ int main() {
                 cpu.b = (Byte)value;
             } else {
                 std::cout << "unknown register: " << r << '\n';
+            }
+        } else if (cmd == "get16") {
+            std::string a;
+            long addr = 0;
+            if (!(words >> a) || !parse_number(a, addr) || addr < 0) {
+                std::cout << "usage: get16 <addr>\n";
+            } else if ((std::size_t)addr + 1 >= MEM_SIZE) {
+                std::cout << "address " << addr << " + 1 is outside 0.." << MEM_SIZE - 1 << '\n';
+            } else {
+                std::uint16_t v = get16(mem, (std::size_t)addr);
+                std::cout << "0x" << std::hex << std::setw(4) << std::setfill('0') << v
+                          << std::dec << std::setfill(' ') << " = " << v << '\n';
+            }
+        } else if (cmd == "set16") {
+            std::string a, v;
+            long addr = 0, value = 0;
+            if (!(words >> a) || !(words >> v) || !parse_number(a, addr) ||
+                !parse_number(v, value)) {
+                std::cout << "usage: set16 <addr> <value>\n";
+            } else if (addr < 0) {
+                std::cout << "address must not be negative\n";
+            } else if (value < 0 || value > 0xFFFF) {
+                std::cout << "a 16-bit value is 0..65535, got " << value << '\n';
+            } else if (!set16(mem, (std::size_t)addr, (std::uint16_t)value)) {
+                std::cout << "address " << addr << " + 1 is outside 0.." << MEM_SIZE - 1 << '\n';
+            }
+        } else if (cmd == "run") {
+            if (cpu.halted) {
+                std::cout << "halted\n";
+            } else {
+                long steps = run(cpu);
+                // OUT друкує без переводу рядка, тож закриваємо рядок тут
+                std::cout << "\n" << steps << " steps\n";
+                dump_regs(cpu);
             }
         } else if (cmd == "regs") {
             dump_regs(cpu);

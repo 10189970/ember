@@ -17,10 +17,23 @@ const std::size_t BYTES_PER_LINE = 16;
 // 0x20 is space, 0x7E is '~'. Everything outside that range we show as '.'.
 static bool is_printable(Byte b) { return b >= 0x20 && b <= 0x7E; }
 
-void dump(const Memory& mem) {
+void dump(const Memory& mem) { dump_range(mem, 0, MEM_SIZE); }
+
+// Lab 3: дамп лише частини пам'яті, щоб показати регіон коду (0x000)
+// і регіон даних (0x800) без 256 рядків нулів. Рядки вирівнюємо по 16.
+void dump_range(const Memory& mem, std::size_t from, std::size_t len) {
+    if (from >= MEM_SIZE) {
+        return;
+    }
+    std::size_t to = from + len;  // перша адреса, яку вже НЕ друкуємо
+    if (to > MEM_SIZE) {
+        to = MEM_SIZE;
+    }
+    std::size_t first_row = from - from % BYTES_PER_LINE;
+
     // std::hex switches the stream to hexadecimal; setfill/setw pad with zeros
     // so every number is the same width and the columns line up.
-    for (std::size_t row = 0; row < MEM_SIZE; row += BYTES_PER_LINE) {
+    for (std::size_t row = first_row; row < to; row += BYTES_PER_LINE) {
 
         // The address column: 0000, 0010, 0020, ...
         std::cout << std::hex << std::setfill('0') << std::setw(4) << row << "  ";
@@ -42,7 +55,7 @@ void dump(const Memory& mem) {
             //                   character already - that is the whole joke of
             //                   Lab 1. Right now every byte looks unprintable.
             if (is_printable(b)) {
-                std::cout << '.';
+                std::cout << b;
             } else {
                 std::cout << '.';
             }
