@@ -1,0 +1,7 @@
+set 0 0x50
+set 1 0x30
+set 2 0x00
+set 3 0x00
+run
+stack
+quit

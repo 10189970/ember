@@ -39,7 +39,7 @@ static void print_help() {
               << "  help              this list\n"
               << "  inc <addr>        increment value\n"
               << "  reg <a|b> <val>   put a value into a CPU register\n"
-              << "  regs              print PC A B Z N C\n"
+              << "  regs              print PC SP A B Z N C\n"
               << "  step              execute one instruction at PC\n"
               << "  run               step until HALT or error\n"
               << "  get16 <addr>      read 2 bytes as one 16-bit value (low byte first)\n"
@@ -49,6 +49,7 @@ static void print_help() {
               << "  plot <x> <y>      light one pixel from C++\n"
               << "  frame             draw a 64x32 border from C++\n"
               << "  layout            sizeof(CPU) and where each field lies\n"
+              << "  stack             SP and the top bytes of the stack\n"
               << "  quit              leave\n";
 }
 
@@ -197,6 +198,8 @@ int main() {
                 plot(mem, 0, y);
                 plot(mem, SCREEN_W - 1, y);
             }
+        } else if (cmd == "stack") {
+            dump_stack(cpu);
         } else if (cmd == "layout") {
             print_layout();
         } else if (cmd == "regs") {

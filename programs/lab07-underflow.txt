@@ -1,0 +1,4 @@
+set 0 0x51
+set 1 0x00
+run
+quit

@@ -1,7 +1,8 @@
 // cpu.cpp — ДАНО форму. Ваші — case для групи 0x1_ і dump_regs() (Lab 2),
 //           група 0x2_, OUT/OUTN, перевірка меж і run() (Lab 3),
 //           повний декодер, CMP, група 0x3_ і ліміт кроків (Lab 4),
-//           група 0x4_ — екран (Lab 5), перехід на enum class Op (Lab 6).
+//           група 0x4_ — екран (Lab 5), перехід на enum class Op (Lab 6),
+//           MUL, стек, CALL/RET (Lab 7).
 #include "cpu.hpp"
 
 #include <cstddef>
@@ -87,8 +88,9 @@ static void exec_alu(CPU& cpu, Op op) {
         // але результат нікуди не пишемо: A лишається, яким був.
         alu_sub(cpu.a, cpu.b, cpu.f);
         break;
+    case Op::Mul: cpu.a = alu_mul(cpu.a, cpu.b, cpu.f); break;
     default:
-        unknown(cpu, op);  // 0x1B MUL — Lab 7
+        unknown(cpu, op);
         return;            // PC не рухаємо
     }
     cpu.pc += 1;
@@ -108,6 +110,7 @@ static std::size_t instr_size(Op op) {
     case Op::Jmp:
     case Op::Jz:
     case Op::Jnz:
+    case Op::Call:
         return 3;  // опкод + addr16 (молодший байт, старший байт)
     default:
         return 1;
@@ -203,6 +206,90 @@ static void exec_screen(CPU& cpu, Op op) {
     cpu.pc += 1;
 }
 
+// ---- Група 0x5_: стек і виклики (Lab 7) ----
+//
+// Стек «порожній спадний»: SP вказує на наступний ВІЛЬНИЙ байт.
+//   PUSH: mem[SP] = v; SP = SP - 1
+//   POP:  SP = SP + 1; v = mem[SP]
+// Регіон стека 0xF00..0xFFF. Вийти за нього — помилка машини з моїм
+// повідомленням, а не падіння процесу і не тихе загортання.
+
+static void stack_error(CPU& cpu, const char* what) {
+    std::cout << "error: stack " << what << " at PC=0x" << std::hex << cpu.pc << " (SP=0x"
+              << cpu.sp << ", stack is 0x" << STACK_LO << "..0x" << STACK_HI << ")" << std::dec
+              << '\n';
+    cpu.error = true;
+    cpu.halted = true;
+}
+
+// Чи можна покласти ще `n` байтів / зняти `n` байтів.
+// Покласти n: найнижчий записаний байт — SP - (n - 1), він має бути >= STACK_LO.
+// Зняти n: найвищий прочитаний байт — SP + n, він має бути <= STACK_HI.
+static bool can_push(const CPU& cpu, unsigned n) { return cpu.sp >= STACK_LO + (n - 1); }
+static bool can_pop(const CPU& cpu, unsigned n) { return cpu.sp + n <= STACK_HI; }
+
+// Без перевірок — їх робить exec_stack ДО того, як щось змінити,
+// щоб CALL не поклав половину адреси і не впав посередині.
+static void push(CPU& cpu, Byte v) {
+    mem_set(*cpu.mem, cpu.sp, v);
+    cpu.sp -= 1;
+}
+static Byte pop(CPU& cpu) {
+    cpu.sp += 1;
+    return mem_get(*cpu.mem, cpu.sp);
+}
+
+static void exec_stack(CPU& cpu, Op op) {
+    unsigned need_push = 0;  // скільки байтів інструкція покладе
+    unsigned need_pop = 0;   // скільки зніме
+    switch (op) {
+    case Op::PushA: case Op::PushB: need_push = 1; break;
+    case Op::PopA:  case Op::PopB:  need_pop = 1;  break;
+    case Op::Call:                  need_push = 2; break;
+    case Op::Ret:                   need_pop = 2;  break;
+    default:
+        unknown(cpu, op);  // 0x56 PUSH H, 0x57 POP H — opt, H у мене немає
+        return;
+    }
+    if (need_push > 0 && !can_push(cpu, need_push)) {
+        stack_error(cpu, "overflow");
+        return;  // PC і SP не рухаємо
+    }
+    if (need_pop > 0 && !can_pop(cpu, need_pop)) {
+        stack_error(cpu, "underflow");
+        return;
+    }
+
+    switch (op) {
+    case Op::PushA: push(cpu, cpu.a);  cpu.pc += 1; break;
+    case Op::PushB: push(cpu, cpu.b);  cpu.pc += 1; break;
+    case Op::PopA:  cpu.a = pop(cpu);  cpu.pc += 1; break;
+    case Op::PopB:  cpu.b = pop(cpu);  cpu.pc += 1; break;
+    case Op::Call: {
+        std::uint16_t target = get16(*cpu.mem, cpu.pc + 1);
+        if (target >= MEM_SIZE) {
+            fail(cpu, "call target out of memory:", target);
+            return;
+        }
+        // Адреса повернення — інструкція ПІСЛЯ CALL, тобто PC + 3.
+        // Якби клали сам PC, RET повернувся б знову на CALL — і так вічно.
+        std::uint16_t ret = cpu.pc + 3;
+        push(cpu, (Byte)(ret & 0x00FF));  // спершу молодший
+        push(cpu, (Byte)(ret >> 8));      // потім старший
+        cpu.pc = target;                  // і, як у JMP, нічого не додаємо
+        break;
+    }
+    case Op::Ret: {
+        Byte hi = pop(cpu);  // знімаємо у зворотному порядку: старший перший
+        Byte lo = pop(cpu);
+        cpu.pc = (std::uint16_t)((hi << 8) | lo);
+        break;
+    }
+    default:
+        break;  // сюди не потрапляємо: невідомі відсіяв перший switch
+    }
+}
+
 void step(CPU& cpu) {
     if (cpu.halted) {
         std::cout << "halted\n";
@@ -244,8 +331,11 @@ void step(CPU& cpu) {
     case 0x4:
         exec_screen(cpu, op);
         break;
+    case 0x5:
+        exec_stack(cpu, op);
+        break;
     default:
-        unknown(cpu, op);  // групи 0x5_ і далі — наступні лаби
+        unknown(cpu, op);  // 0x6_ ALLOC — Advanced у Lab 6, у мене немає
         break;
     }
 }
@@ -263,6 +353,7 @@ void print_layout() {
     const Row rows[] = {
         {"Memory* mem", offsetof(CPU, mem), sizeof(CPU::mem)},
         {"uint16_t pc", offsetof(CPU, pc), sizeof(CPU::pc)},
+        {"uint16_t sp", offsetof(CPU, sp), sizeof(CPU::sp)},
         {"Byte a", offsetof(CPU, a), sizeof(CPU::a)},
         {"Byte b", offsetof(CPU, b), sizeof(CPU::b)},
         {"Flags f", offsetof(CPU, f), sizeof(CPU::f)},
@@ -285,8 +376,28 @@ void print_layout() {
     }
 }
 
+void dump_stack(const CPU& cpu) {
+    std::cout << "SP=0x" << std::hex << cpu.sp;
+    if (cpu.sp >= STACK_HI) {
+        std::cout << "  (empty)" << std::dec << '\n';
+        return;
+    }
+    // Верхівка стека — SP + 1 (останній покладений байт), далі вглиб до 0xFFF.
+    std::cout << "  top ->";
+    int shown = 0;
+    for (std::size_t addr = cpu.sp + 1; addr <= STACK_HI && shown < 8; ++addr, ++shown) {
+        std::cout << "  [" << addr << "]=" << std::setw(2) << std::setfill('0')
+                  << (int)mem_get(*cpu.mem, addr) << std::setfill(' ');
+    }
+    if ((std::size_t)cpu.sp + 1 + 8 <= STACK_HI) {
+        std::cout << "  ...";  // глибше ще є байти, але вісім — досить
+    }
+    std::cout << std::dec << '\n';
+}
+
 void dump_regs(const CPU& cpu) {
     std::cout << "PC=" << std::hex << std::setfill('0') << std::setw(4) << cpu.pc
+              << "  SP=" << std::setw(3) << cpu.sp
               << "  A=" << std::setw(2) << (int)cpu.a
               << "  B=" << std::setw(2) << (int)cpu.b << std::dec << std::setfill(' ')
               << "  (A=" << (int)cpu.a << " B=" << (int)cpu.b << ")"

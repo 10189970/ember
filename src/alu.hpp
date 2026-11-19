@@ -16,3 +16,4 @@ Byte alu_shl(Byte a, Flags& f);          // Z N C   (C = біт, що виїха
 Byte alu_shr(Byte a, Flags& f);          // Z N C   (C = біт, що виїхав із 0-ї позиції)
 Byte alu_inc(Byte a, Flags& f);          // Z N     (C не чіпає)
 Byte alu_dec(Byte a, Flags& f);          // Z N     (C не чіпає)
+Byte alu_mul(Byte a, Byte b, Flags& f);  // Z N C   (C = справжній добуток > 255), Lab 7

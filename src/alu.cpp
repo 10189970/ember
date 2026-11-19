@@ -91,3 +91,13 @@ Byte alu_dec(Byte a, Flags& f) {
     set_zn(r, f);
     return r;
 }
+
+// Lab 7. Byte * Byte підноситься до int, тож справжній добуток (до 255*255)
+// не губиться — з нього й видно, чи вліз він у байт.
+Byte alu_mul(Byte a, Byte b, Flags& f) {
+    unsigned full = (unsigned)a * (unsigned)b;
+    Byte r = (Byte)full;  // молодші 8 бітів
+    set_zn(r, f);
+    f.c = (full > 0xFF);
+    return r;
+}

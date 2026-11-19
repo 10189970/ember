@@ -21,6 +21,8 @@ const std::size_t DATA_LO = 0x800;
 const std::size_t DATA_HI = 0x9FF;
 const std::size_t VRAM_LO = 0xA00;  // Lab 5: екран 64x32, біт на піксель
 const std::size_t VRAM_HI = 0xAFF;
+const std::size_t STACK_LO = 0xF00;  // Lab 7: стек, порожній спадний
+const std::size_t STACK_HI = 0xFFF;  // SP стартує тут і йде вниз
 
 struct Memory {
     // The `{}` zero-initializes the whole array.
